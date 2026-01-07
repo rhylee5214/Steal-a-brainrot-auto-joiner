@@ -31,6 +31,7 @@ local Config = {
     ScanInterval = 30, -- seconds between server scans
     PlaceId = 109983668079237, -- Official Sammy's Steal a Brainrot (Place ID for teleporting)
     UniverseId = nil, -- Will be fetched automatically from Place ID
+    UniverseIdErrorShown = false, -- Track if error notification was shown
     MaxServersToScan = 50,
     UIExpanded = false,
     ESPEnabled = true
@@ -886,12 +887,16 @@ local function getUniverseIdFromPlaceId(placeId)
     end)
     
     if success and result then
-        local decoded = HttpService:JSONDecode(result)
-        if decoded and decoded.universeId then
+        local decoded = pcall(function()
+            return HttpService:JSONDecode(result)
+        end)
+        if decoded and type(decoded) == "table" and decoded.universeId then
             return decoded.universeId
         end
     end
     
+    -- Log error for debugging
+    warn("Failed to get Universe ID from Place ID:", placeId)
     return nil
 end
 
@@ -903,7 +908,11 @@ local function fetchRealServers()
     if not Config.UniverseId then
         Config.UniverseId = getUniverseIdFromPlaceId(Config.PlaceId)
         if not Config.UniverseId then
-            createNotification("Error", "Failed to get Universe ID for the game", 3)
+            -- Only show error notification once to avoid spam
+            if not Config.UniverseIdErrorShown then
+                createNotification("Error", "Failed to get Universe ID. Check Place ID.", 4)
+                Config.UniverseIdErrorShown = true
+            end
             return servers
         end
     end
@@ -928,6 +937,8 @@ local function fetchRealServers()
                 })
             end
         end
+    else
+        warn("Failed to fetch servers from API")
     end
 
     return servers
