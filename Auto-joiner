@@ -29,7 +29,8 @@ local Config = {
     MinimumIncome = 100000000, -- 100M/s default
     Enabled = false,
     ScanInterval = 30, -- seconds between server scans
-    GameId = 109983668079237, -- Official Sammy's Steal a Brainrot
+    PlaceId = 109983668079237, -- Official Sammy's Steal a Brainrot (Place ID for teleporting)
+    UniverseId = nil, -- Will be fetched automatically from Place ID
     MaxServersToScan = 50,
     UIExpanded = false,
     ESPEnabled = true
@@ -869,7 +870,7 @@ function joinServer(jobId)
     createNotification("Auto-Joiner", "Attempting to join server...", 3)
 
     local success, err = pcall(function()
-        TeleportService:TeleportToPlaceInstance(Config.GameId, jobId, LocalPlayer)
+        TeleportService:TeleportToPlaceInstance(Config.PlaceId, jobId, LocalPlayer)
     end)
 
     if not success then
@@ -877,13 +878,40 @@ function joinServer(jobId)
     end
 end
 
+-- Function to get Universe ID from Place ID
+local function getUniverseIdFromPlaceId(placeId)
+    local success, result = pcall(function()
+        local url = string.format("https://apis.roblox.com/universes/v1/places/%s/universe", placeId)
+        return HttpService:GetAsync(url)
+    end)
+    
+    if success and result then
+        local decoded = HttpService:JSONDecode(result)
+        if decoded and decoded.universeId then
+            return decoded.universeId
+        end
+    end
+    
+    return nil
+end
+
 -- Function to fetch real servers from Roblox API
 local function fetchRealServers()
     local servers = {}
+    
+    -- Get Universe ID if not already cached
+    if not Config.UniverseId then
+        Config.UniverseId = getUniverseIdFromPlaceId(Config.PlaceId)
+        if not Config.UniverseId then
+            createNotification("Error", "Failed to get Universe ID for the game", 3)
+            return servers
+        end
+    end
+    
     local success, result = pcall(function()
         local url = string.format(
             "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100",
-            Config.GameId
+            Config.UniverseId
         )
         return HttpService:GetAsync(url)
     end)
