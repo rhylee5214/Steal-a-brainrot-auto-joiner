@@ -881,16 +881,21 @@ end
 
 -- Function to get Universe ID from Place ID
 local function getUniverseIdFromPlaceId(placeId)
+    if not placeId or type(placeId) ~= "number" then
+        warn("Invalid Place ID provided:", placeId)
+        return nil
+    end
+    
     local success, result = pcall(function()
         local url = string.format("https://apis.roblox.com/universes/v1/places/%s/universe", placeId)
         return HttpService:GetAsync(url)
     end)
     
     if success and result then
-        local decoded = pcall(function()
+        local decodeSuccess, decoded = pcall(function()
             return HttpService:JSONDecode(result)
         end)
-        if decoded and type(decoded) == "table" and decoded.universeId then
+        if decodeSuccess and type(decoded) == "table" and decoded.universeId then
             return decoded.universeId
         end
     end
