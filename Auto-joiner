@@ -5,12 +5,12 @@
     Features:
     - Automatically scans public servers for high-income players
     - Joins servers with income >= threshold (default 100M/s)
-    - ESP highlights highest value Brainrot on server
+    - ESP highlights ONLY the highest value Brainrot on server
     - Modern neon black UI with purple accents
     - Adjustable minimum income threshold
     - Toggle on/off functionality
     
-    Game ID: 112763189425208 (Official Sammy's Steal a Brainrot)
+    Game ID: 109983668079237 (Official Sammy's Steal a Brainrot)
     Usage: Execute this script in Roblox
 ]]
 
@@ -29,7 +29,9 @@ local Config = {
     MinimumIncome = 100000000, -- 100M/s default
     Enabled = false,
     ScanInterval = 30, -- seconds between server scans
-    GameId = 112763189425208, -- Official Sammy's Steal a Brainrot
+    PlaceId = 109983668079237, -- Official Sammy's Steal a Brainrot (Place ID for teleporting)
+    UniverseId = nil, -- Will be fetched automatically from Place ID
+    UniverseIdErrorShown = false, -- Track if error notification was shown
     MaxServersToScan = 50,
     UIExpanded = false,
     ESPEnabled = true
@@ -207,27 +209,11 @@ local function updateESP()
     -- Sort by value to find highest
     table.sort(brainrots, function(a, b) return a.value > b.value end)
 
-    -- Highlight top 3 Brainrots
-    for i, brainrot in ipairs(brainrots) do
-        if i > 3 then break end
-
-        local color
-        local labelText
-
-        if i == 1 then
-            -- Highest value - Neon purple/pink
-            color = Color3.fromRGB(255, 0, 255)
-            labelText = "⭐ HIGHEST VALUE\n" .. brainrot.name .. "\n$" .. formatNumber(brainrot.value)
-        elseif i == 2 then
-            -- Second highest - Neon cyan
-            color = Color3.fromRGB(0, 255, 255)
-            labelText = brainrot.name .. "\n$" .. formatNumber(brainrot.value)
-        else
-            -- Third - Neon green
-            color = Color3.fromRGB(0, 255, 0)
-            labelText = brainrot.name .. "\n$" .. formatNumber(brainrot.value)
-        end
-
+    -- Highlight ONLY the highest value Brainrot
+    if #brainrots > 0 then
+        local brainrot = brainrots[1]
+        local color = Color3.fromRGB(255, 0, 255) -- Neon purple/pink
+        local labelText = "⭐ HIGHEST VALUE\n" .. brainrot.name .. "\n$" .. formatNumber(brainrot.value)
         createESPHighlight(brainrot.model, color, labelText)
     end
 end
@@ -673,7 +659,7 @@ local function createUI()
     espDesc.Size = UDim2.new(1, -20, 0, 80)
     espDesc.Position = UDim2.new(0, 10, 0, 110)
     espDesc.BackgroundTransparency = 1
-    espDesc.Text = "Highlights the top 3 highest value Brainrots on the server:\n• Highest = Neon Pink\n• 2nd = Neon Cyan\n• 3rd = Neon Green"
+    espDesc.Text = "Highlights ONLY the highest value Brainrot on the server with a Neon Pink glow and label."
     espDesc.TextColor3 = Color3.fromRGB(200, 200, 200)
     espDesc.TextSize = 11
     espDesc.Font = Enum.Font.Gotham
@@ -885,7 +871,7 @@ function joinServer(jobId)
     createNotification("Auto-Joiner", "Attempting to join server...", 3)
 
     local success, err = pcall(function()
-        TeleportService:TeleportToPlaceInstance(Config.GameId, jobId, LocalPlayer)
+        TeleportService:TeleportToPlaceInstance(Config.PlaceId, jobId, LocalPlayer)
     end)
 
     if not success then
@@ -893,13 +879,59 @@ function joinServer(jobId)
     end
 end
 
+-- Function to get Universe ID from Place ID
+local function getUniverseIdFromPlaceId(placeId)
+    if not placeId or type(placeId) ~= "number" then
+        warn("Invalid Place ID provided:", placeId)
+        return nil
+    end
+    
+    local success, result = pcall(function()
+        local url = string.format("https://apis.roblox.com/universes/v1/places/%s/universe", placeId)
+        return HttpService:GetAsync(url)
+    end)
+    
+    if success and result then
+        local decodeSuccess, decoded = pcall(function()
+            return HttpService:JSONDecode(result)
+        end)
+        if decodeSuccess and type(decoded) == "table" and decoded.universeId and type(decoded.universeId) == "number" then
+            return decoded.universeId
+        end
+    end
+    
+    -- Log error for debugging
+    warn("Failed to get Universe ID from Place ID:", placeId)
+    return nil
+end
+
 -- Function to fetch real servers from Roblox API
 local function fetchRealServers()
     local servers = {}
+    
+    -- Get Universe ID if not already cached
+    if not Config.UniverseId then
+        Config.UniverseId = getUniverseIdFromPlaceId(Config.PlaceId)
+        if not Config.UniverseId then
+            -- Only show error notification once to avoid spam
+            if not Config.UniverseIdErrorShown then
+                createNotification("Error", "Failed to get Universe ID. Check Place ID.", 4)
+                Config.UniverseIdErrorShown = true
+            end
+            return servers
+        end
+    end
+    
+    -- Validate Universe ID is a number
+    if type(Config.UniverseId) ~= "number" then
+        warn("Invalid Universe ID type:", type(Config.UniverseId))
+        return servers
+    end
+    
     local success, result = pcall(function()
         local url = string.format(
             "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100",
-            Config.GameId
+            Config.UniverseId
         )
         return HttpService:GetAsync(url)
     end)
@@ -916,6 +948,8 @@ local function fetchRealServers()
                 })
             end
         end
+    else
+        warn("Failed to fetch servers from API")
     end
 
     return servers
