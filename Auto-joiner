@@ -895,7 +895,7 @@ local function getUniverseIdFromPlaceId(placeId)
         local decodeSuccess, decoded = pcall(function()
             return HttpService:JSONDecode(result)
         end)
-        if decodeSuccess and type(decoded) == "table" and decoded.universeId then
+        if decodeSuccess and type(decoded) == "table" and decoded.universeId and type(decoded.universeId) == "number" then
             return decoded.universeId
         end
     end
@@ -920,6 +920,12 @@ local function fetchRealServers()
             end
             return servers
         end
+    end
+    
+    -- Validate Universe ID is a number
+    if type(Config.UniverseId) ~= "number" then
+        warn("Invalid Universe ID type:", type(Config.UniverseId))
+        return servers
     end
     
     local success, result = pcall(function()
