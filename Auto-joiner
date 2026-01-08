@@ -291,7 +291,11 @@ local function simulateInteraction(model)
 end
 
 local function autoGrabBrainrot()
-    if IsGrabbing or not Config.AutoGrabEnabled then
+    if IsGrabbing then
+        return -- Prevent multiple instances
+    end
+    
+    if not Config.AutoGrabEnabled then
         return
     end
     
@@ -333,11 +337,20 @@ local function removeHitbox()
     if not LocalPlayer.Character then return end
     
     local success, err = pcall(function()
+        -- Clear old references on new character
+        OriginalHitboxSizes = {}
+        
         for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
             if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                -- Store original size if not already stored
-                if not OriginalHitboxSizes[part] then
-                    OriginalHitboxSizes[part] = part.Size
+                -- Store original size using part's full name path
+                local partKey = part:GetFullName()
+                if not OriginalHitboxSizes[partKey] then
+                    OriginalHitboxSizes[partKey] = {
+                        size = part.Size,
+                        transparency = part.Transparency,
+                        canCollide = part.CanCollide,
+                        massless = part.Massless
+                    }
                 end
                 
                 -- Make parts extremely small but not zero to avoid issues
@@ -361,14 +374,22 @@ local function restoreHitbox()
     
     local success, err = pcall(function()
         for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and OriginalHitboxSizes[part] then
-                -- Restore original size
-                part.Size = OriginalHitboxSizes[part]
-                part.Transparency = 0
-                part.CanCollide = true
-                part.Massless = false
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                local partKey = part:GetFullName()
+                local originalData = OriginalHitboxSizes[partKey]
+                
+                if originalData then
+                    -- Restore original properties
+                    part.Size = originalData.size
+                    part.Transparency = originalData.transparency
+                    part.CanCollide = originalData.canCollide
+                    part.Massless = originalData.massless
+                end
             end
         end
+        
+        -- Clear the storage after restoration
+        OriginalHitboxSizes = {}
     end)
     
     if success then
@@ -380,15 +401,21 @@ end
 
 local function maintainHitboxRemoval()
     -- Continuously maintain hitbox removal when enabled
+    local lastUpdate = 0
     RunService.Heartbeat:Connect(function()
         if Config.HitboxRemoverEnabled and LocalPlayer.Character then
-            for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
-                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                    if part.Size ~= Vector3.new(0.01, 0.01, 0.01) then
-                        part.Size = Vector3.new(0.01, 0.01, 0.01)
-                        part.Transparency = 0.9
-                        part.CanCollide = false
-                        part.Massless = true
+            local currentTime = tick()
+            -- Only update every 0.5 seconds to reduce overhead
+            if currentTime - lastUpdate >= 0.5 then
+                lastUpdate = currentTime
+                for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        if part.Size ~= Vector3.new(0.01, 0.01, 0.01) then
+                            part.Size = Vector3.new(0.01, 0.01, 0.01)
+                            part.Transparency = 0.9
+                            part.CanCollide = false
+                            part.Massless = true
+                        end
                     end
                 end
             end
