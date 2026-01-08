@@ -2,9 +2,16 @@ import express from "express";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 
-dotenv.config();
+// Load environment variables with error handling
+const dotenvResult = dotenv.config();
+if (dotenvResult.error) {
+  console.warn("Warning: Could not load .env file. Using environment variables only.");
+}
 
 const app = express();
+
+// Configuration constants
+const DISCORD_WEBHOOK_TIMEOUT = 5000; // 5 seconds
 
 // Rate limiting: 15s window, 30 req/IP
 const rateLimitMap = new Map();
@@ -50,7 +57,7 @@ app.use((req, res, next) => {
 
 // Rate limiting middleware
 function rateLimitMiddleware(req, res, next) {
-  const ip = req.ip || req.connection.remoteAddress;
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
   const now = Date.now();
   
   if (!rateLimitMap.has(ip)) {
@@ -122,7 +129,7 @@ async function sendEmbed(brainrots, payload, webhookUrl) {
   };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), DISCORD_WEBHOOK_TIMEOUT);
 
   try {
     const response = await fetch(webhookUrl, {
@@ -204,7 +211,7 @@ app.post("/data", rateLimitMiddleware, authMiddleware, async (req, res) => {
       jobId,
       placeId,
       count: truncatedBrainrots.length,
-      ip: req.ip || req.connection.remoteAddress
+      ip: req.ip || req.socket?.remoteAddress || 'unknown'
     });
     if (lastPayloads.length > MAX_PAYLOAD_HISTORY) {
       lastPayloads.shift();

@@ -26,6 +26,10 @@ local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
+-- UI Constants
+local UI_INCOME_NOT_AVAILABLE = "N/A/s"
+local UI_INCOME_NOT_AVAILABLE_COLOR = Color3.fromRGB(150, 150, 150)
+
 -- Configuration
 local Config = {
     MinimumIncome = 100000000, -- 100M/s default
@@ -57,7 +61,8 @@ local Config = {
         Radius = 12, -- Detection radius for nearby threats
         Step = 6, -- Distance to move when dodging
         Cooldown = 0.6, -- Seconds between dodge attempts
-        Randomize = true -- Add randomness to dodge direction
+        Randomize = true, -- Add randomness to dodge direction
+        RandomAngleRange = 30 -- Max random angle in degrees (±30)
     }
 }
 
@@ -571,7 +576,7 @@ local function performDodge()
             
             -- Add randomness if enabled
             if Config.AntiHit.Randomize then
-                local randomAngle = math.random(-30, 30) -- Random angle in degrees
+                local randomAngle = math.random(-Config.AntiHit.RandomAngleRange, Config.AntiHit.RandomAngleRange)
                 local rad = math.rad(randomAngle)
                 local cos = math.cos(rad)
                 local sin = math.sin(rad)
@@ -1413,8 +1418,8 @@ local function updateServerListDisplay()
         incomeLabel.Size = UDim2.new(1, -20, 0, 16)
         incomeLabel.Position = UDim2.new(0, 10, 0, 25)
         incomeLabel.BackgroundTransparency = 1
-        incomeLabel.Text = "💰 Income: N/A/s"
-        incomeLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        incomeLabel.Text = "💰 Income: " .. UI_INCOME_NOT_AVAILABLE
+        incomeLabel.TextColor3 = UI_INCOME_NOT_AVAILABLE_COLOR
         incomeLabel.TextSize = 12
         incomeLabel.Font = Enum.Font.Gotham
         incomeLabel.TextXAlignment = Enum.TextXAlignment.Left
