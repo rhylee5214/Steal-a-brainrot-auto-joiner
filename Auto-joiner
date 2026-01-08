@@ -57,6 +57,8 @@ local OriginalHitboxSizes = {} -- Store original hitbox sizes
 local HitboxMaintenanceConnection = nil -- Store connection for cleanup
 local ESPLoopTask = nil -- Store ESP task for cleanup
 local TARGET_HITBOX_SIZE = Vector3.new(0.01, 0.01, 0.01) -- Constant for comparison
+local CurrentESPTarget = nil -- Track current ESP target to avoid flickering
+local BrainrotValueCache = {} -- Persistent cache for brainrot values
 
 -- Helper Functions
 local function formatNumber(num)
@@ -177,7 +179,6 @@ end
 local function findBrainrotsInWorkspace()
     local workspace = game:GetService("Workspace")
     local brainrots = {}
-    local valueCache = {} -- Cache values to maintain consistency
 
     -- Common Brainrot names in Sammy's game
     local brainrotNames = {
@@ -186,28 +187,35 @@ local function findBrainrotsInWorkspace()
         "Brainrot", "Sammy", "Sus", "Gyat", "Rizzler"
     }
 
-    -- Search workspace for Brainrot models
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name and obj.Name ~= "" then
-            -- Check if object name contains brainrot keywords
-            for _, name in ipairs(brainrotNames) do
-                if string.find(obj.Name:lower(), name:lower()) then
-                    -- Use cached value or create deterministic value based on object
-                    local objKey = obj:GetFullName()
-                    if not valueCache[objKey] then
-                        -- Create semi-deterministic value based on object properties
-                        local seed = string.len(obj.Name) + (obj:GetChildren() and #obj:GetChildren() or 0)
-                        math.randomseed(seed)
-                        valueCache[objKey] = math.random(Config.BrainrotMinValue, Config.BrainrotMaxValue)
-                        math.randomseed(tick()) -- Reset seed
+    -- Search workspace for Brainrot models (check for actual players, not just any model)
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local character = player.Character
+            local humanoid = character:FindFirstChild("Humanoid")
+            
+            -- Only consider alive players
+            if humanoid and humanoid.Health > 0 then
+                -- Check if player name contains brainrot keywords
+                for _, name in ipairs(brainrotNames) do
+                    if string.find(player.Name:lower(), name:lower()) or string.find(player.DisplayName:lower(), name:lower()) then
+                        -- Use persistent cached value or create deterministic value based on player
+                        local objKey = "Player_" .. player.UserId
+                        if not BrainrotValueCache[objKey] then
+                            -- Create semi-deterministic value based on player properties
+                            local seed = player.UserId + string.len(player.Name)
+                            math.randomseed(seed)
+                            BrainrotValueCache[objKey] = math.random(Config.BrainrotMinValue, Config.BrainrotMaxValue)
+                            math.randomseed(os.clock()) -- Reset seed
+                        end
+                        
+                        table.insert(brainrots, {
+                            model = character,
+                            name = player.DisplayName,
+                            value = BrainrotValueCache[objKey],
+                            player = player
+                        })
+                        break
                     end
-                    
-                    table.insert(brainrots, {
-                        model = obj,
-                        name = obj.Name,
-                        value = valueCache[objKey]
-                    })
-                    break
                 end
             end
         end
@@ -219,19 +227,34 @@ end
 local function updateESP()
     if not Config.ESPEnabled then
         clearESP()
+        CurrentESPTarget = nil
         return
     end
 
-    clearESP()
-
     local brainrots = getSortedBrainrots()
 
-    -- Highlight ONLY the highest value Brainrot
+    -- Find the highest value Brainrot
     if #brainrots > 0 then
         local brainrot = brainrots[1]
-        local color = Color3.fromRGB(255, 0, 255) -- Neon purple/pink
-        local labelText = "⭐ HIGHEST VALUE\n" .. brainrot.name .. "\n$" .. formatNumber(brainrot.value)
-        createESPHighlight(brainrot.model, color, labelText)
+        
+        -- Only update ESP if target changed or doesn't exist
+        if not CurrentESPTarget or CurrentESPTarget ~= brainrot.player then
+            clearESP()
+            CurrentESPTarget = brainrot.player
+            
+            local color = Color3.fromRGB(255, 0, 255) -- Neon purple/pink
+            local labelText = "⭐ HIGHEST VALUE\n" .. brainrot.name .. "\n$" .. formatNumber(brainrot.value)
+            createESPHighlight(brainrot.model, color, labelText)
+            
+            -- Notify about the best brainrot
+            createNotification("ESP", "Targeting: " .. brainrot.name .. " ($" .. formatNumber(brainrot.value) .. ")", 3)
+        end
+    else
+        -- No brainrots found, clear ESP
+        if CurrentESPTarget then
+            clearESP()
+            CurrentESPTarget = nil
+        end
     end
 end
 
@@ -244,7 +267,16 @@ local function startESP()
     ESPLoopTask = task.spawn(function()
         while Config.ESPEnabled do
             updateESP()
-            task.wait(2) -- Update ESP every 2 seconds to reduce lag
+            
+            -- Check if current target left or died
+            if CurrentESPTarget then
+                if not CurrentESPTarget.Parent or not CurrentESPTarget.Character or not CurrentESPTarget.Character:FindFirstChild("Humanoid") or CurrentESPTarget.Character.Humanoid.Health <= 0 then
+                    clearESP()
+                    CurrentESPTarget = nil
+                end
+            end
+            
+            task.wait(1) -- Check more frequently for better responsiveness
         end
         ESPLoopTask = nil
     end)
@@ -516,11 +548,11 @@ local function createUI()
     circleIcon.Font = Enum.Font.GothamBold
     circleIcon.Parent = circleButton
 
-    -- Main Frame (Hidden initially - Neon Black Theme)
+    -- Main Frame (Hidden initially - Neon Black Theme) - SMALLER FOR MOBILE
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 350, 0, 400)
-    mainFrame.Position = UDim2.new(0.5, -175, 0.5, -200)
+    mainFrame.Size = UDim2.new(0, 280, 0, 340) -- Reduced from 350x400
+    mainFrame.Position = UDim2.new(0.5, -140, 0.5, -170)
     mainFrame.BackgroundColor3 = Color3.fromRGB(5, 5, 5) -- Pure black
     mainFrame.BorderSizePixel = 0
     mainFrame.Visible = false
@@ -536,10 +568,10 @@ local function createUI()
     mainStroke.Thickness = 3
     mainStroke.Parent = mainFrame
 
-    -- Header
+    -- Header - SMALLER FOR MOBILE
     local header = Instance.new("Frame")
     header.Name = "Header"
-    header.Size = UDim2.new(1, 0, 0, 50)
+    header.Size = UDim2.new(1, 0, 0, 40) -- Reduced from 50
     header.BackgroundColor3 = Color3.fromRGB(10, 10, 10) -- Dark black
     header.BorderSizePixel = 0
     header.Parent = mainFrame
@@ -549,24 +581,24 @@ local function createUI()
     headerCorner.Parent = header
 
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -100, 1, 0)
-    title.Position = UDim2.new(0, 15, 0, 0)
+    title.Size = UDim2.new(1, -80, 1, 0) -- Adjusted for smaller close button
+    title.Position = UDim2.new(0, 10, 0, 0)
     title.BackgroundTransparency = 1
     title.Text = "🧠 STEAL A BRAINROT"
     title.TextColor3 = Color3.fromRGB(255, 0, 255) -- Neon magenta
-    title.TextSize = 18
+    title.TextSize = 14 -- Reduced from 18
     title.Font = Enum.Font.GothamBold
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = header
 
-    -- Close Button
+    -- Close Button - SMALLER
     local closeButton = Instance.new("TextButton")
-    closeButton.Size = UDim2.new(0, 40, 0, 40)
-    closeButton.Position = UDim2.new(1, -45, 0, 5)
+    closeButton.Size = UDim2.new(0, 30, 0, 30) -- Reduced from 40x40
+    closeButton.Position = UDim2.new(1, -35, 0, 5)
     closeButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
     closeButton.Text = "✕"
     closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeButton.TextSize = 18
+    closeButton.TextSize = 16 -- Reduced from 18
     closeButton.Font = Enum.Font.GothamBold
     closeButton.BorderSizePixel = 0
     closeButton.Parent = header
@@ -576,11 +608,11 @@ local function createUI()
     closeCorner.CornerRadius = UDim.new(1, 0)
     closeCorner.Parent = closeButton
 
-    -- Tab Bar
+    -- Tab Bar - SMALLER FOR MOBILE
     local tabBar = Instance.new("Frame")
     tabBar.Name = "TabBar"
-    tabBar.Size = UDim2.new(1, 0, 0, 45)
-    tabBar.Position = UDim2.new(0, 0, 0, 50)
+    tabBar.Size = UDim2.new(1, 0, 0, 35) -- Reduced from 45
+    tabBar.Position = UDim2.new(0, 0, 0, 40) -- Adjusted for smaller header
     tabBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0) -- Pure black
     tabBar.BorderSizePixel = 0
     tabBar.Parent = mainFrame
@@ -588,15 +620,15 @@ local function createUI()
     local tabLayout = Instance.new("UIListLayout")
     tabLayout.FillDirection = Enum.FillDirection.Horizontal
     tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    tabLayout.Padding = UDim.new(0, 5)
+    tabLayout.Padding = UDim.new(0, 3) -- Reduced from 5
     tabLayout.Parent = tabBar
 
     local tabPadding = Instance.new("UIPadding")
-    tabPadding.PaddingLeft = UDim.new(0, 10)
-    tabPadding.PaddingTop = UDim.new(0, 7)
+    tabPadding.PaddingLeft = UDim.new(0, 5) -- Reduced from 10
+    tabPadding.PaddingTop = UDim.new(0, 5) -- Reduced from 7
     tabPadding.Parent = tabBar
 
-    -- Create Tabs (Neon theme)
+    -- Create Tabs (Neon theme) - SMALLER
     local tabs = {"Dashboard", "Settings", "Servers", "ESP"}
     UIElements.Tabs = {}
     UIElements.TabContents = {}
@@ -604,26 +636,26 @@ local function createUI()
     for i, tabName in ipairs(tabs) do
         local tabButton = Instance.new("TextButton")
         tabButton.Name = tabName .. "Tab"
-        tabButton.Size = UDim2.new(0, 80, 0, 32)
+        tabButton.Size = UDim2.new(0, 65, 0, 26) -- Reduced from 80x32
         tabButton.BackgroundColor3 = i == 1 and Color3.fromRGB(255, 0, 255) or Color3.fromRGB(15, 15, 15) -- Neon or dark
         tabButton.Text = tabName
         tabButton.TextColor3 = i == 1 and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(255, 0, 255) -- Black text on active, neon on inactive
-        tabButton.TextSize = 12
+        tabButton.TextSize = 10 -- Reduced from 12
         tabButton.Font = Enum.Font.GothamBold
         tabButton.BorderSizePixel = 0
         tabButton.Parent = tabBar
         UIElements.Tabs[tabName] = tabButton
 
         local tabCorner = Instance.new("UICorner")
-        tabCorner.CornerRadius = UDim.new(0, 8)
+        tabCorner.CornerRadius = UDim.new(0, 6) -- Reduced from 8
         tabCorner.Parent = tabButton
     end
 
-    -- Content Container
+    -- Content Container - ADJUSTED FOR SMALLER UI
     local contentContainer = Instance.new("Frame")
     contentContainer.Name = "ContentContainer"
-    contentContainer.Size = UDim2.new(1, -20, 1, -115)
-    contentContainer.Position = UDim2.new(0, 10, 0, 105)
+    contentContainer.Size = UDim2.new(1, -16, 1, -90) -- Adjusted for smaller header and tabs
+    contentContainer.Position = UDim2.new(0, 8, 0, 82) -- Adjusted position
     contentContainer.BackgroundTransparency = 1
     contentContainer.Parent = mainFrame
 
@@ -636,191 +668,191 @@ local function createUI()
     dashboardContent.Parent = contentContainer
     UIElements.TabContents.Dashboard = dashboardContent
 
-    -- Status Card
+    -- Status Card - SMALLER FOR MOBILE
     local statusCard = Instance.new("Frame")
-    statusCard.Size = UDim2.new(1, 0, 0, 80)
+    statusCard.Size = UDim2.new(1, 0, 0, 60) -- Reduced from 80
     statusCard.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     statusCard.BorderSizePixel = 0
     statusCard.Parent = dashboardContent
 
     local statusCorner = Instance.new("UICorner")
-    statusCorner.CornerRadius = UDim.new(0, 10)
+    statusCorner.CornerRadius = UDim.new(0, 8) -- Reduced from 10
     statusCorner.Parent = statusCard
 
     local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(1, -20, 0, 30)
-    statusLabel.Position = UDim2.new(0, 10, 0, 10)
+    statusLabel.Size = UDim2.new(1, -16, 0, 20) -- Reduced
+    statusLabel.Position = UDim2.new(0, 8, 0, 5) -- Reduced padding
     statusLabel.BackgroundTransparency = 1
     statusLabel.Text = "Status: Inactive"
     statusLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-    statusLabel.TextSize = 16
+    statusLabel.TextSize = 12 -- Reduced from 16
     statusLabel.Font = Enum.Font.GothamBold
     statusLabel.TextXAlignment = Enum.TextXAlignment.Left
     statusLabel.Parent = statusCard
     UIElements.StatusLabel = statusLabel
 
-    -- Toggle Button
+    -- Toggle Button - SMALLER
     local toggleButton = Instance.new("TextButton")
-    toggleButton.Size = UDim2.new(0, 200, 0, 35)
-    toggleButton.Position = UDim2.new(0, 10, 0, 40)
+    toggleButton.Size = UDim2.new(0, 150, 0, 28) -- Reduced from 200x35
+    toggleButton.Position = UDim2.new(0, 8, 0, 28) -- Adjusted
     toggleButton.BackgroundColor3 = Color3.fromRGB(50, 205, 50)
     toggleButton.Text = "🔴 Start Auto-Joiner"
     toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    toggleButton.TextSize = 14
+    toggleButton.TextSize = 11 -- Reduced from 14
     toggleButton.Font = Enum.Font.GothamBold
     toggleButton.BorderSizePixel = 0
     toggleButton.Parent = statusCard
     UIElements.ToggleButton = toggleButton
 
     local toggleCorner = Instance.new("UICorner")
-    toggleCorner.CornerRadius = UDim.new(0, 8)
+    toggleCorner.CornerRadius = UDim.new(0, 6) -- Reduced from 8
     toggleCorner.Parent = toggleButton
 
-    -- Info Card
+    -- Info Card - SMALLER FOR MOBILE
     local infoCard = Instance.new("Frame")
-    infoCard.Size = UDim2.new(1, 0, 0, 120)
-    infoCard.Position = UDim2.new(0, 0, 0, 90)
+    infoCard.Size = UDim2.new(1, 0, 0, 85) -- Reduced from 120
+    infoCard.Position = UDim2.new(0, 0, 0, 65) -- Adjusted position
     infoCard.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     infoCard.BorderSizePixel = 0
     infoCard.Parent = dashboardContent
 
     local infoCorner = Instance.new("UICorner")
-    infoCorner.CornerRadius = UDim.new(0, 10)
+    infoCorner.CornerRadius = UDim.new(0, 8) -- Reduced from 10
     infoCorner.Parent = infoCard
 
     local infoTitle = Instance.new("TextLabel")
-    infoTitle.Size = UDim2.new(1, -20, 0, 25)
-    infoTitle.Position = UDim2.new(0, 10, 0, 10)
+    infoTitle.Size = UDim2.new(1, -16, 0, 18) -- Reduced
+    infoTitle.Position = UDim2.new(0, 8, 0, 5) -- Reduced padding
     infoTitle.BackgroundTransparency = 1
     infoTitle.Text = "📊 Statistics"
     infoTitle.TextColor3 = Color3.fromRGB(138, 43, 226)
-    infoTitle.TextSize = 16
+    infoTitle.TextSize = 12 -- Reduced from 16
     infoTitle.Font = Enum.Font.GothamBold
     infoTitle.TextXAlignment = Enum.TextXAlignment.Left
     infoTitle.Parent = infoCard
 
     local scannedLabel = Instance.new("TextLabel")
-    scannedLabel.Size = UDim2.new(1, -20, 0, 20)
-    scannedLabel.Position = UDim2.new(0, 10, 0, 40)
+    scannedLabel.Size = UDim2.new(1, -16, 0, 16) -- Reduced
+    scannedLabel.Position = UDim2.new(0, 8, 0, 28) -- Adjusted
     scannedLabel.BackgroundTransparency = 1
     scannedLabel.Text = "Servers Scanned: 0"
     scannedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    scannedLabel.TextSize = 14
+    scannedLabel.TextSize = 11 -- Reduced from 14
     scannedLabel.Font = Enum.Font.Gotham
     scannedLabel.TextXAlignment = Enum.TextXAlignment.Left
     scannedLabel.Parent = infoCard
     UIElements.ScannedLabel = scannedLabel
 
     local foundLabel = Instance.new("TextLabel")
-    foundLabel.Size = UDim2.new(1, -20, 0, 20)
-    foundLabel.Position = UDim2.new(0, 10, 0, 65)
+    foundLabel.Size = UDim2.new(1, -16, 0, 16) -- Reduced
+    foundLabel.Position = UDim2.new(0, 8, 0, 46) -- Adjusted
     foundLabel.BackgroundTransparency = 1
     foundLabel.Text = "Eligible Servers: 0"
     foundLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    foundLabel.TextSize = 14
+    foundLabel.TextSize = 11 -- Reduced from 14
     foundLabel.Font = Enum.Font.Gotham
     foundLabel.TextXAlignment = Enum.TextXAlignment.Left
     foundLabel.Parent = infoCard
     UIElements.FoundLabel = foundLabel
 
     local thresholdLabel = Instance.new("TextLabel")
-    thresholdLabel.Size = UDim2.new(1, -20, 0, 20)
-    thresholdLabel.Position = UDim2.new(0, 10, 0, 90)
+    thresholdLabel.Size = UDim2.new(1, -16, 0, 16) -- Reduced
+    thresholdLabel.Position = UDim2.new(0, 8, 0, 64) -- Adjusted
     thresholdLabel.BackgroundTransparency = 1
     thresholdLabel.Text = "Min Income: " .. formatNumber(Config.MinimumIncome) .. "/s"
     thresholdLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    thresholdLabel.TextSize = 14
+    thresholdLabel.TextSize = 11 -- Reduced from 14
     thresholdLabel.Font = Enum.Font.Gotham
     thresholdLabel.TextXAlignment = Enum.TextXAlignment.Left
     thresholdLabel.Parent = infoCard
     UIElements.ThresholdLabel = thresholdLabel
 
-    -- Auto-Grab Feature Card
+    -- Auto-Grab Feature Card - SMALLER FOR MOBILE
     local autoGrabCard = Instance.new("Frame")
-    autoGrabCard.Size = UDim2.new(1, 0, 0, 80)
-    autoGrabCard.Position = UDim2.new(0, 0, 0, 220)
+    autoGrabCard.Size = UDim2.new(1, 0, 0, 60) -- Reduced from 80
+    autoGrabCard.Position = UDim2.new(0, 0, 0, 155) -- Adjusted position
     autoGrabCard.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     autoGrabCard.BorderSizePixel = 0
     autoGrabCard.Parent = dashboardContent
 
     local autoGrabCorner = Instance.new("UICorner")
-    autoGrabCorner.CornerRadius = UDim.new(0, 10)
+    autoGrabCorner.CornerRadius = UDim.new(0, 8) -- Reduced from 10
     autoGrabCorner.Parent = autoGrabCard
 
     local autoGrabStroke = Instance.new("UIStroke")
     autoGrabStroke.Color = Color3.fromRGB(255, 215, 0) -- Gold color
-    autoGrabStroke.Thickness = 2
+    autoGrabStroke.Thickness = 1.5 -- Reduced from 2
     autoGrabStroke.Parent = autoGrabCard
 
     local autoGrabTitle = Instance.new("TextLabel")
-    autoGrabTitle.Size = UDim2.new(1, -20, 0, 25)
-    autoGrabTitle.Position = UDim2.new(0, 10, 0, 5)
+    autoGrabTitle.Size = UDim2.new(1, -16, 0, 18) -- Reduced
+    autoGrabTitle.Position = UDim2.new(0, 8, 0, 4) -- Adjusted
     autoGrabTitle.BackgroundTransparency = 1
     autoGrabTitle.Text = "🎯 Auto-Grab Brainrots"
     autoGrabTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
-    autoGrabTitle.TextSize = 15
+    autoGrabTitle.TextSize = 11 -- Reduced from 15
     autoGrabTitle.Font = Enum.Font.GothamBold
     autoGrabTitle.TextXAlignment = Enum.TextXAlignment.Left
     autoGrabTitle.Parent = autoGrabCard
 
     local autoGrabButton = Instance.new("TextButton")
-    autoGrabButton.Size = UDim2.new(0, 150, 0, 30)
-    autoGrabButton.Position = UDim2.new(0, 10, 0, 35)
+    autoGrabButton.Size = UDim2.new(0, 130, 0, 26) -- Reduced from 150x30
+    autoGrabButton.Position = UDim2.new(0, 8, 0, 28) -- Adjusted
     autoGrabButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
     autoGrabButton.Text = "🔴 Enable Auto-Grab"
     autoGrabButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-    autoGrabButton.TextSize = 13
+    autoGrabButton.TextSize = 10 -- Reduced from 13
     autoGrabButton.Font = Enum.Font.GothamBold
     autoGrabButton.BorderSizePixel = 0
     autoGrabButton.Parent = autoGrabCard
     UIElements.AutoGrabButton = autoGrabButton
 
     local autoGrabButtonCorner = Instance.new("UICorner")
-    autoGrabButtonCorner.CornerRadius = UDim.new(0, 8)
+    autoGrabButtonCorner.CornerRadius = UDim.new(0, 6) -- Reduced from 8
     autoGrabButtonCorner.Parent = autoGrabButton
 
-    -- Hitbox Remover Feature Card
+    -- Hitbox Remover Feature Card - SMALLER FOR MOBILE
     local hitboxCard = Instance.new("Frame")
-    hitboxCard.Size = UDim2.new(1, 0, 0, 80)
-    hitboxCard.Position = UDim2.new(0, 0, 0, 310)
+    hitboxCard.Size = UDim2.new(1, 0, 0, 60) -- Reduced from 80
+    hitboxCard.Position = UDim2.new(0, 0, 0, 220) -- Adjusted position
     hitboxCard.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     hitboxCard.BorderSizePixel = 0
     hitboxCard.Parent = dashboardContent
 
     local hitboxCorner = Instance.new("UICorner")
-    hitboxCorner.CornerRadius = UDim.new(0, 10)
+    hitboxCorner.CornerRadius = UDim.new(0, 8) -- Reduced from 10
     hitboxCorner.Parent = hitboxCard
 
     local hitboxStroke = Instance.new("UIStroke")
     hitboxStroke.Color = Color3.fromRGB(0, 255, 255) -- Cyan color
-    hitboxStroke.Thickness = 2
+    hitboxStroke.Thickness = 1.5 -- Reduced from 2
     hitboxStroke.Parent = hitboxCard
 
     local hitboxTitle = Instance.new("TextLabel")
-    hitboxTitle.Size = UDim2.new(1, -20, 0, 25)
-    hitboxTitle.Position = UDim2.new(0, 10, 0, 5)
+    hitboxTitle.Size = UDim2.new(1, -16, 0, 18) -- Reduced
+    hitboxTitle.Position = UDim2.new(0, 8, 0, 4) -- Adjusted
     hitboxTitle.BackgroundTransparency = 1
     hitboxTitle.Text = "🛡️ Hitbox Remover"
     hitboxTitle.TextColor3 = Color3.fromRGB(0, 255, 255)
-    hitboxTitle.TextSize = 15
+    hitboxTitle.TextSize = 11 -- Reduced from 15
     hitboxTitle.Font = Enum.Font.GothamBold
     hitboxTitle.TextXAlignment = Enum.TextXAlignment.Left
     hitboxTitle.Parent = hitboxCard
 
     local hitboxButton = Instance.new("TextButton")
-    hitboxButton.Size = UDim2.new(0, 150, 0, 30)
-    hitboxButton.Position = UDim2.new(0, 10, 0, 35)
+    hitboxButton.Size = UDim2.new(0, 130, 0, 26) -- Reduced from 150x30
+    hitboxButton.Position = UDim2.new(0, 8, 0, 28) -- Adjusted
     hitboxButton.BackgroundColor3 = Color3.fromRGB(0, 200, 200)
     hitboxButton.Text = "🔴 Enable Hitbox Remover"
     hitboxButton.TextColor3 = Color3.fromRGB(0, 0, 0)
-    hitboxButton.TextSize = 12
+    hitboxButton.TextSize = 9 -- Reduced from 12
     hitboxButton.Font = Enum.Font.GothamBold
     hitboxButton.BorderSizePixel = 0
     hitboxButton.Parent = hitboxCard
     UIElements.HitboxButton = hitboxButton
 
     local hitboxButtonCorner = Instance.new("UICorner")
-    hitboxButtonCorner.CornerRadius = UDim.new(0, 8)
+    hitboxButtonCorner.CornerRadius = UDim.new(0, 6) -- Reduced from 8
     hitboxButtonCorner.Parent = hitboxButton
 
     -- Settings Tab Content
@@ -1052,13 +1084,13 @@ local function toggleUI()
 
     if Config.UIExpanded then
         mainFrame.Visible = true
-        -- Animate expansion (Smaller size)
+        -- Animate expansion (Smaller size for mobile)
         local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
         mainFrame.Size = UDim2.new(0, 0, 0, 0)
         mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
         local tween = TweenService:Create(mainFrame, tweenInfo, {
-            Size = UDim2.new(0, 350, 0, 400),
-            Position = UDim2.new(0.5, -175, 0.5, -200)
+            Size = UDim2.new(0, 280, 0, 340), -- Updated to match new smaller size
+            Position = UDim2.new(0.5, -140, 0.5, -170)
         })
         tween:Play()
     else
@@ -1585,6 +1617,17 @@ local function init()
             task.wait(1) -- Wait for character to fully load
             maintainHitboxRemoval() -- Restart maintenance for new character
             removeHitbox()
+        end
+    end)
+    
+    -- Clear ESP when tracked player leaves the server
+    Players.PlayerRemoving:Connect(function(player)
+        if CurrentESPTarget == player then
+            clearESP()
+            CurrentESPTarget = nil
+            if Config.ESPEnabled then
+                createNotification("ESP", "Target left server", 2)
+            end
         end
     end)
     
