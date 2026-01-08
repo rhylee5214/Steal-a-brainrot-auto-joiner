@@ -55,6 +55,7 @@ local IsScanning = false
 local IsGrabbing = false
 local OriginalHitboxSizes = {} -- Store original hitbox sizes
 local HitboxMaintenanceConnection = nil -- Store connection for cleanup
+local ESPLoopTask = nil -- Store ESP task for cleanup
 local TARGET_HITBOX_SIZE = Vector3.new(0.01, 0.01, 0.01) -- Constant for comparison
 
 -- Helper Functions
@@ -176,6 +177,7 @@ end
 local function findBrainrotsInWorkspace()
     local workspace = game:GetService("Workspace")
     local brainrots = {}
+    local valueCache = {} -- Cache values to maintain consistency
 
     -- Common Brainrot names in Sammy's game
     local brainrotNames = {
@@ -190,12 +192,20 @@ local function findBrainrotsInWorkspace()
             -- Check if object name contains brainrot keywords
             for _, name in ipairs(brainrotNames) do
                 if string.find(obj.Name:lower(), name:lower()) then
-                    -- Try to estimate value (placeholder - real game would need actual value detection)
-                    local estimatedValue = math.random(Config.BrainrotMinValue, Config.BrainrotMaxValue)
+                    -- Use cached value or create deterministic value based on object
+                    local objKey = obj:GetFullName()
+                    if not valueCache[objKey] then
+                        -- Create semi-deterministic value based on object properties
+                        local seed = string.len(obj.Name) + (obj:GetChildren() and #obj:GetChildren() or 0)
+                        math.randomseed(seed)
+                        valueCache[objKey] = math.random(Config.BrainrotMinValue, Config.BrainrotMaxValue)
+                        math.randomseed(tick()) -- Reset seed
+                    end
+                    
                     table.insert(brainrots, {
                         model = obj,
                         name = obj.Name,
-                        value = estimatedValue
+                        value = valueCache[objKey]
                     })
                     break
                 end
@@ -227,14 +237,25 @@ end
 
 -- Start ESP loop
 local function startESP()
-    task.spawn(function()
-        while true do
-            if Config.ESPEnabled then
-                updateESP()
-            end
+    if ESPLoopTask then
+        return -- Already running
+    end
+    
+    ESPLoopTask = task.spawn(function()
+        while Config.ESPEnabled do
+            updateESP()
             task.wait(2) -- Update ESP every 2 seconds to reduce lag
         end
+        ESPLoopTask = nil
     end)
+end
+
+local function stopESP()
+    if ESPLoopTask then
+        task.cancel(ESPLoopTask)
+        ESPLoopTask = nil
+    end
+    clearESP()
 end
 
 -- Auto-Grab Brainrots Functions
@@ -310,36 +331,44 @@ local function autoGrabBrainrot()
     IsGrabbing = true
     
     task.spawn(function()
-        while Config.AutoGrabEnabled do
-            local brainrot = getHighestValueBrainrot()
-            
-            if brainrot and brainrot.model then
-                -- Find primary part for teleportation
-                local primaryPart = brainrot.model.PrimaryPart 
-                    or brainrot.model:FindFirstChild("HumanoidRootPart") 
-                    or brainrot.model:FindFirstChildWhichIsA("BasePart")
+        -- Wrap entire loop in pcall to ensure flag is reset
+        local success = pcall(function()
+            while Config.AutoGrabEnabled do
+                local brainrot = getHighestValueBrainrot()
                 
-                if primaryPart then
-                    -- Teleport to Brainrot
-                    local success = teleportToPosition(primaryPart.Position)
+                if brainrot and brainrot.model then
+                    -- Find primary part for teleportation
+                    local primaryPart = brainrot.model.PrimaryPart 
+                        or brainrot.model:FindFirstChild("HumanoidRootPart") 
+                        or brainrot.model:FindFirstChildWhichIsA("BasePart")
                     
-                    if success then
-                        task.wait(Config.TeleportWaitTime) -- Wait for teleportation to complete
+                    if primaryPart then
+                        -- Teleport to Brainrot
+                        local teleportSuccess = teleportToPosition(primaryPart.Position)
                         
-                        -- Simulate interaction
-                        local grabbed = simulateInteraction(brainrot.model)
-                        
-                        if grabbed then
-                            createNotification("Auto-Grab", "Grabbed " .. brainrot.name .. " ($" .. formatNumber(brainrot.value) .. ")", 3)
+                        if teleportSuccess then
+                            task.wait(Config.TeleportWaitTime) -- Wait for teleportation to complete
+                            
+                            -- Simulate interaction
+                            local grabbed = simulateInteraction(brainrot.model)
+                            
+                            if grabbed then
+                                createNotification("Auto-Grab", "Grabbed " .. brainrot.name .. " ($" .. formatNumber(brainrot.value) .. ")", 3)
+                            end
                         end
                     end
                 end
+                
+                task.wait(Config.GrabInterval)
             end
-            
-            task.wait(Config.GrabInterval)
-        end
+        end)
         
+        -- Always reset flag, even on error
         IsGrabbing = false
+        
+        if not success then
+            createNotification("Auto-Grab", "Auto-grab stopped due to error", 3)
+        end
     end)
 end
 
@@ -418,7 +447,7 @@ local function maintainHitboxRemoval()
     local lastUpdate = 0
     HitboxMaintenanceConnection = RunService.Heartbeat:Connect(function()
         if Config.HitboxRemoverEnabled and LocalPlayer.Character then
-            local currentTime = tick()
+            local currentTime = os.clock() -- Use os.clock() instead of deprecated tick()
             -- Only update based on configured interval
             if currentTime - lastUpdate >= Config.HitboxMaintenanceInterval then
                 lastUpdate = currentTime
@@ -1490,11 +1519,11 @@ local function setupEventHandlers()
                 UIElements.ESPToggleButton.Text = "✅ ESP Enabled"
                 UIElements.ESPToggleButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
                 createNotification("ESP", "Brainrot ESP activated!", 2)
-                updateESP()
+                startESP() -- Start ESP loop
             else
                 UIElements.ESPToggleButton.Text = "❌ ESP Disabled"
                 UIElements.ESPToggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-                clearESP()
+                stopESP() -- Stop ESP loop and clear
                 createNotification("ESP", "Brainrot ESP deactivated!", 2)
             end
         end)
