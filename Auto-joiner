@@ -6,6 +6,8 @@
     - Automatically scans public servers for high-income players
     - Joins servers with income >= threshold (default 100M/s)
     - ESP highlights ONLY the highest value Brainrot on server
+    - Auto-Grab Brainrots: Automatically teleports to and grabs highest-value Brainrots
+    - Hitbox Remover: Makes character unhittable by modifying hitbox
     - Modern neon black UI with purple accents
     - Adjustable minimum income threshold
     - Toggle on/off functionality
@@ -34,7 +36,10 @@ local Config = {
     UniverseIdErrorShown = false, -- Track if error notification was shown
     MaxServersToScan = 50,
     UIExpanded = false,
-    ESPEnabled = true
+    ESPEnabled = true,
+    AutoGrabEnabled = false, -- Auto-grab Brainrots feature
+    HitboxRemoverEnabled = false, -- Hitbox remover feature
+    GrabInterval = 5 -- seconds between grab attempts
 }
 
 -- UI State
@@ -42,6 +47,8 @@ local UIElements = {}
 local ServerList = {}
 local ESPObjects = {}
 local IsScanning = false
+local IsGrabbing = false
+local OriginalHitboxSizes = {} -- Store original hitbox sizes
 
 -- Helper Functions
 local function formatNumber(num)
@@ -227,6 +234,164 @@ local function startESP()
                 updateESP()
                 task.wait(2)
             end)
+        end
+    end)
+end
+
+-- Auto-Grab Brainrots Functions
+local function getHighestValueBrainrot()
+    local brainrots = findBrainrotsInWorkspace()
+    
+    if #brainrots == 0 then
+        return nil
+    end
+    
+    -- Sort by value to find highest
+    table.sort(brainrots, function(a, b) return a.value > b.value end)
+    
+    return brainrots[1]
+end
+
+local function teleportToPosition(position)
+    if not LocalPlayer.Character then return false end
+    
+    local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return false end
+    
+    -- Safe teleportation
+    local success, err = pcall(function()
+        humanoidRootPart.CFrame = CFrame.new(position)
+    end)
+    
+    return success
+end
+
+local function simulateInteraction(model)
+    if not model or not model:IsA("Model") then return false end
+    
+    -- Try to find ClickDetector or ProximityPrompt for interaction
+    local clickDetector = model:FindFirstChildOfClass("ClickDetector", true)
+    local proximityPrompt = model:FindFirstChildOfClass("ProximityPrompt", true)
+    
+    if clickDetector then
+        -- Simulate click
+        local success = pcall(function()
+            fireclickdetector(clickDetector)
+        end)
+        return success
+    elseif proximityPrompt then
+        -- Trigger proximity prompt
+        local success = pcall(function()
+            fireproximityprompt(proximityPrompt)
+        end)
+        return success
+    end
+    
+    return false
+end
+
+local function autoGrabBrainrot()
+    if IsGrabbing or not Config.AutoGrabEnabled then
+        return
+    end
+    
+    IsGrabbing = true
+    
+    task.spawn(function()
+        while Config.AutoGrabEnabled do
+            local brainrot = getHighestValueBrainrot()
+            
+            if brainrot and brainrot.model then
+                local primaryPart = brainrot.model.PrimaryPart or brainrot.model:FindFirstChild("HumanoidRootPart") or brainrot.model:FindFirstChildWhichIsA("BasePart")
+                
+                if primaryPart then
+                    -- Teleport to Brainrot
+                    local success = teleportToPosition(primaryPart.Position)
+                    
+                    if success then
+                        task.wait(0.5) -- Wait for teleportation to complete
+                        
+                        -- Simulate interaction
+                        local grabbed = simulateInteraction(brainrot.model)
+                        
+                        if grabbed then
+                            createNotification("Auto-Grab", "Grabbed " .. brainrot.name .. " ($" .. formatNumber(brainrot.value) .. ")", 3)
+                        end
+                    end
+                end
+            end
+            
+            task.wait(Config.GrabInterval)
+        end
+        
+        IsGrabbing = false
+    end)
+end
+
+-- Hitbox Remover Functions
+local function removeHitbox()
+    if not LocalPlayer.Character then return end
+    
+    local success, err = pcall(function()
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                -- Store original size if not already stored
+                if not OriginalHitboxSizes[part] then
+                    OriginalHitboxSizes[part] = part.Size
+                end
+                
+                -- Make parts extremely small but not zero to avoid issues
+                part.Size = Vector3.new(0.01, 0.01, 0.01)
+                part.Transparency = 0.9
+                part.CanCollide = false
+                part.Massless = true
+            end
+        end
+    end)
+    
+    if success then
+        createNotification("Hitbox Remover", "Hitbox removed - character is now unhittable", 3)
+    else
+        createNotification("Error", "Failed to remove hitbox: " .. tostring(err), 3)
+    end
+end
+
+local function restoreHitbox()
+    if not LocalPlayer.Character then return end
+    
+    local success, err = pcall(function()
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and OriginalHitboxSizes[part] then
+                -- Restore original size
+                part.Size = OriginalHitboxSizes[part]
+                part.Transparency = 0
+                part.CanCollide = true
+                part.Massless = false
+            end
+        end
+    end)
+    
+    if success then
+        createNotification("Hitbox Remover", "Hitbox restored to normal", 3)
+    else
+        createNotification("Error", "Failed to restore hitbox: " .. tostring(err), 3)
+    end
+end
+
+local function maintainHitboxRemoval()
+    -- Continuously maintain hitbox removal when enabled
+    RunService.Heartbeat:Connect(function()
+        if Config.HitboxRemoverEnabled and LocalPlayer.Character then
+            for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    if part.Size ~= Vector3.new(0.01, 0.01, 0.01) then
+                        part.Size = Vector3.new(0.01, 0.01, 0.01)
+                        part.Transparency = 0.9
+                        part.CanCollide = false
+                        part.Massless = true
+                    end
+                end
+            end
         end
     end)
 end
@@ -499,6 +664,94 @@ local function createUI()
     thresholdLabel.TextXAlignment = Enum.TextXAlignment.Left
     thresholdLabel.Parent = infoCard
     UIElements.ThresholdLabel = thresholdLabel
+
+    -- Auto-Grab Feature Card
+    local autoGrabCard = Instance.new("Frame")
+    autoGrabCard.Size = UDim2.new(1, 0, 0, 80)
+    autoGrabCard.Position = UDim2.new(0, 0, 0, 220)
+    autoGrabCard.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    autoGrabCard.BorderSizePixel = 0
+    autoGrabCard.Parent = dashboardContent
+
+    local autoGrabCorner = Instance.new("UICorner")
+    autoGrabCorner.CornerRadius = UDim.new(0, 10)
+    autoGrabCorner.Parent = autoGrabCard
+
+    local autoGrabStroke = Instance.new("UIStroke")
+    autoGrabStroke.Color = Color3.fromRGB(255, 215, 0) -- Gold color
+    autoGrabStroke.Thickness = 2
+    autoGrabStroke.Parent = autoGrabCard
+
+    local autoGrabTitle = Instance.new("TextLabel")
+    autoGrabTitle.Size = UDim2.new(1, -20, 0, 25)
+    autoGrabTitle.Position = UDim2.new(0, 10, 0, 5)
+    autoGrabTitle.BackgroundTransparency = 1
+    autoGrabTitle.Text = "🎯 Auto-Grab Brainrots"
+    autoGrabTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
+    autoGrabTitle.TextSize = 15
+    autoGrabTitle.Font = Enum.Font.GothamBold
+    autoGrabTitle.TextXAlignment = Enum.TextXAlignment.Left
+    autoGrabTitle.Parent = autoGrabCard
+
+    local autoGrabButton = Instance.new("TextButton")
+    autoGrabButton.Size = UDim2.new(0, 150, 0, 30)
+    autoGrabButton.Position = UDim2.new(0, 10, 0, 35)
+    autoGrabButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+    autoGrabButton.Text = "🔴 Enable Auto-Grab"
+    autoGrabButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    autoGrabButton.TextSize = 13
+    autoGrabButton.Font = Enum.Font.GothamBold
+    autoGrabButton.BorderSizePixel = 0
+    autoGrabButton.Parent = autoGrabCard
+    UIElements.AutoGrabButton = autoGrabButton
+
+    local autoGrabButtonCorner = Instance.new("UICorner")
+    autoGrabButtonCorner.CornerRadius = UDim.new(0, 8)
+    autoGrabButtonCorner.Parent = autoGrabButton
+
+    -- Hitbox Remover Feature Card
+    local hitboxCard = Instance.new("Frame")
+    hitboxCard.Size = UDim2.new(1, 0, 0, 80)
+    hitboxCard.Position = UDim2.new(0, 0, 0, 310)
+    hitboxCard.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    hitboxCard.BorderSizePixel = 0
+    hitboxCard.Parent = dashboardContent
+
+    local hitboxCorner = Instance.new("UICorner")
+    hitboxCorner.CornerRadius = UDim.new(0, 10)
+    hitboxCorner.Parent = hitboxCard
+
+    local hitboxStroke = Instance.new("UIStroke")
+    hitboxStroke.Color = Color3.fromRGB(0, 255, 255) -- Cyan color
+    hitboxStroke.Thickness = 2
+    hitboxStroke.Parent = hitboxCard
+
+    local hitboxTitle = Instance.new("TextLabel")
+    hitboxTitle.Size = UDim2.new(1, -20, 0, 25)
+    hitboxTitle.Position = UDim2.new(0, 10, 0, 5)
+    hitboxTitle.BackgroundTransparency = 1
+    hitboxTitle.Text = "🛡️ Hitbox Remover"
+    hitboxTitle.TextColor3 = Color3.fromRGB(0, 255, 255)
+    hitboxTitle.TextSize = 15
+    hitboxTitle.Font = Enum.Font.GothamBold
+    hitboxTitle.TextXAlignment = Enum.TextXAlignment.Left
+    hitboxTitle.Parent = hitboxCard
+
+    local hitboxButton = Instance.new("TextButton")
+    hitboxButton.Size = UDim2.new(0, 150, 0, 30)
+    hitboxButton.Position = UDim2.new(0, 10, 0, 35)
+    hitboxButton.BackgroundColor3 = Color3.fromRGB(0, 200, 200)
+    hitboxButton.Text = "🔴 Enable Hitbox Remover"
+    hitboxButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+    hitboxButton.TextSize = 12
+    hitboxButton.Font = Enum.Font.GothamBold
+    hitboxButton.BorderSizePixel = 0
+    hitboxButton.Parent = hitboxCard
+    UIElements.HitboxButton = hitboxButton
+
+    local hitboxButtonCorner = Instance.new("UICorner")
+    hitboxButtonCorner.CornerRadius = UDim.new(0, 8)
+    hitboxButtonCorner.Parent = hitboxButton
 
     -- Settings Tab Content
     local settingsContent = Instance.new("Frame")
@@ -1205,6 +1458,41 @@ local function setupEventHandlers()
             end
         end)
     end
+
+    -- Auto-Grab Toggle button
+    if UIElements.AutoGrabButton then
+        UIElements.AutoGrabButton.MouseButton1Click:Connect(function()
+            Config.AutoGrabEnabled = not Config.AutoGrabEnabled
+
+            if Config.AutoGrabEnabled then
+                UIElements.AutoGrabButton.Text = "🟢 Disable Auto-Grab"
+                UIElements.AutoGrabButton.BackgroundColor3 = Color3.fromRGB(50, 205, 50)
+                createNotification("Auto-Grab", "Auto-Grab Brainrots activated!", 2)
+                autoGrabBrainrot() -- Start auto-grabbing
+            else
+                UIElements.AutoGrabButton.Text = "🔴 Enable Auto-Grab"
+                UIElements.AutoGrabButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+                createNotification("Auto-Grab", "Auto-Grab Brainrots deactivated!", 2)
+            end
+        end)
+    end
+
+    -- Hitbox Remover Toggle button
+    if UIElements.HitboxButton then
+        UIElements.HitboxButton.MouseButton1Click:Connect(function()
+            Config.HitboxRemoverEnabled = not Config.HitboxRemoverEnabled
+
+            if Config.HitboxRemoverEnabled then
+                UIElements.HitboxButton.Text = "🟢 Disable Hitbox Remover"
+                UIElements.HitboxButton.BackgroundColor3 = Color3.fromRGB(50, 205, 50)
+                removeHitbox()
+            else
+                UIElements.HitboxButton.Text = "🔴 Enable Hitbox Remover"
+                UIElements.HitboxButton.BackgroundColor3 = Color3.fromRGB(0, 200, 200)
+                restoreHitbox()
+            end
+        end)
+    end
 end
 
 -- Initialize
@@ -1213,6 +1501,7 @@ local function init()
     setupEventHandlers()
     startAutoScan()
     startESP() -- Start ESP system
+    maintainHitboxRemoval() -- Start hitbox maintenance
     createNotification("Steal a Brainrot", "By Sammy - Script loaded! Click brain icon.", 4)
 end
 
