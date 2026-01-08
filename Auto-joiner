@@ -40,6 +40,8 @@ local Config = {
     AutoGrabEnabled = false, -- Auto-grab Brainrots feature
     HitboxRemoverEnabled = false, -- Hitbox remover feature
     GrabInterval = 5, -- seconds between grab attempts
+    TeleportWaitTime = 0.5, -- seconds to wait after teleportation
+    HitboxMaintenanceInterval = 0.5, -- seconds between hitbox maintenance checks
     -- Brainrot value estimation range (placeholder - real game would need actual value detection)
     BrainrotMinValue = 1000,
     BrainrotMaxValue = 10000000
@@ -212,14 +214,7 @@ local function updateESP()
 
     clearESP()
 
-    local brainrots = findBrainrotsInWorkspace()
-
-    if #brainrots == 0 then
-        return
-    end
-
-    -- Sort by value to find highest
-    table.sort(brainrots, function(a, b) return a.value > b.value end)
+    local brainrots = getSortedBrainrots()
 
     -- Highlight ONLY the highest value Brainrot
     if #brainrots > 0 then
@@ -243,17 +238,22 @@ local function startESP()
 end
 
 -- Auto-Grab Brainrots Functions
-local function getHighestValueBrainrot()
+local function getSortedBrainrots()
     local brainrots = findBrainrotsInWorkspace()
     
     if #brainrots == 0 then
-        return nil
+        return {}
     end
     
     -- Sort by value to find highest
     table.sort(brainrots, function(a, b) return a.value > b.value end)
     
-    return brainrots[1]
+    return brainrots
+end
+
+local function getHighestValueBrainrot()
+    local brainrots = getSortedBrainrots()
+    return brainrots[1] -- Returns nil if empty
 end
 
 local function teleportToPosition(position)
@@ -314,14 +314,17 @@ local function autoGrabBrainrot()
             local brainrot = getHighestValueBrainrot()
             
             if brainrot and brainrot.model then
-                local primaryPart = brainrot.model.PrimaryPart or brainrot.model:FindFirstChild("HumanoidRootPart") or brainrot.model:FindFirstChildWhichIsA("BasePart")
+                -- Find primary part for teleportation
+                local primaryPart = brainrot.model.PrimaryPart 
+                    or brainrot.model:FindFirstChild("HumanoidRootPart") 
+                    or brainrot.model:FindFirstChildWhichIsA("BasePart")
                 
                 if primaryPart then
                     -- Teleport to Brainrot
                     local success = teleportToPosition(primaryPart.Position)
                     
                     if success then
-                        task.wait(0.5) -- Wait for teleportation to complete
+                        task.wait(Config.TeleportWaitTime) -- Wait for teleportation to complete
                         
                         -- Simulate interaction
                         local grabbed = simulateInteraction(brainrot.model)
@@ -406,17 +409,18 @@ local function restoreHitbox()
 end
 
 local function maintainHitboxRemoval()
-    -- Only start maintenance when enabled
+    -- Disconnect old connection if exists
     if HitboxMaintenanceConnection then
-        return -- Already connected
+        HitboxMaintenanceConnection:Disconnect()
+        HitboxMaintenanceConnection = nil
     end
     
     local lastUpdate = 0
     HitboxMaintenanceConnection = RunService.Heartbeat:Connect(function()
         if Config.HitboxRemoverEnabled and LocalPlayer.Character then
             local currentTime = tick()
-            -- Only update every 0.5 seconds to reduce overhead
-            if currentTime - lastUpdate >= 0.5 then
+            -- Only update based on configured interval
+            if currentTime - lastUpdate >= Config.HitboxMaintenanceInterval then
                 lastUpdate = currentTime
                 for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
                     if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
@@ -1550,6 +1554,7 @@ local function init()
         OriginalHitboxSizes = {}
         if Config.HitboxRemoverEnabled then
             task.wait(1) -- Wait for character to fully load
+            maintainHitboxRemoval() -- Restart maintenance for new character
             removeHitbox()
         end
     end)
