@@ -49,6 +49,8 @@ local ESPObjects = {}
 local IsScanning = false
 local IsGrabbing = false
 local OriginalHitboxSizes = {} -- Store original hitbox sizes
+local HitboxMaintenanceConnection = nil -- Store connection for cleanup
+local TARGET_HITBOX_SIZE = Vector3.new(0.01, 0.01, 0.01) -- Constant for comparison
 
 -- Helper Functions
 local function formatNumber(num)
@@ -337,13 +339,11 @@ local function removeHitbox()
     if not LocalPlayer.Character then return end
     
     local success, err = pcall(function()
-        -- Clear old references on new character
-        OriginalHitboxSizes = {}
-        
         for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
             if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
                 -- Store original size using part's full name path
                 local partKey = part:GetFullName()
+                -- Only store if not already stored (prevents overwriting on re-enable)
                 if not OriginalHitboxSizes[partKey] then
                     OriginalHitboxSizes[partKey] = {
                         size = part.Size,
@@ -354,7 +354,7 @@ local function removeHitbox()
                 end
                 
                 -- Make parts extremely small but not zero to avoid issues
-                part.Size = Vector3.new(0.01, 0.01, 0.01)
+                part.Size = TARGET_HITBOX_SIZE
                 part.Transparency = 0.9
                 part.CanCollide = false
                 part.Massless = true
@@ -400,9 +400,13 @@ local function restoreHitbox()
 end
 
 local function maintainHitboxRemoval()
-    -- Continuously maintain hitbox removal when enabled
+    -- Only start maintenance when enabled
+    if HitboxMaintenanceConnection then
+        return -- Already connected
+    end
+    
     local lastUpdate = 0
-    RunService.Heartbeat:Connect(function()
+    HitboxMaintenanceConnection = RunService.Heartbeat:Connect(function()
         if Config.HitboxRemoverEnabled and LocalPlayer.Character then
             local currentTime = tick()
             -- Only update every 0.5 seconds to reduce overhead
@@ -410,8 +414,8 @@ local function maintainHitboxRemoval()
                 lastUpdate = currentTime
                 for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
                     if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                        if part.Size ~= Vector3.new(0.01, 0.01, 0.01) then
-                            part.Size = Vector3.new(0.01, 0.01, 0.01)
+                        if part.Size ~= TARGET_HITBOX_SIZE then
+                            part.Size = TARGET_HITBOX_SIZE
                             part.Transparency = 0.9
                             part.CanCollide = false
                             part.Massless = true
@@ -1512,6 +1516,7 @@ local function setupEventHandlers()
             if Config.HitboxRemoverEnabled then
                 UIElements.HitboxButton.Text = "🟢 Disable Hitbox Remover"
                 UIElements.HitboxButton.BackgroundColor3 = Color3.fromRGB(50, 205, 50)
+                maintainHitboxRemoval() -- Start maintenance loop
                 removeHitbox()
             else
                 UIElements.HitboxButton.Text = "🔴 Enable Hitbox Remover"
@@ -1528,7 +1533,16 @@ local function init()
     setupEventHandlers()
     startAutoScan()
     startESP() -- Start ESP system
-    maintainHitboxRemoval() -- Start hitbox maintenance
+    
+    -- Clear hitbox data on character respawn
+    LocalPlayer.CharacterAdded:Connect(function()
+        OriginalHitboxSizes = {}
+        if Config.HitboxRemoverEnabled then
+            task.wait(1) -- Wait for character to fully load
+            removeHitbox()
+        end
+    end)
+    
     createNotification("Steal a Brainrot", "By Sammy - Script loaded! Click brain icon.", 4)
 end
 
