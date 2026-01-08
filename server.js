@@ -5,8 +5,8 @@ const app = express();
 app.use(express.json());
 
 // Webhooks distintos según rango
-const WEBHOOK_LOW = "https://discord.com/api/webhooks/1447732354679574619/pej-yrBqP1id3D8AP52xFHpqVp1vxQaLU1J16_BEZ_KQzlH3-rcd2doou-tUjXCfFEd4";   // 1–10 millones
-const WEBHOOK_HIGH = "https://discord.com/api/webhooks/1446783650413805733/otrtXV75ymi3f3N6uAspE0SXa7omjVSGJTiAjqPKxr016IONoQWd5NhFuGQXpWyt6RmW";  // >10 millones
+const WEBHOOK_LOW = "https://discord.com/api/webhooks/1458754029818744833/aM98FXJ9Yksoo1FNamrLJfOhXT2Eefcfw2tvA36m-OM1G3SmbQl4Urid185Tu2S-xzSV";   // 1–10 millones
+const WEBHOOK_HIGH = "https://discord.com/api/webhooks/1458754235884765267/HwFdHLzFSNGjnrSCIOD3XkE66BtV3NjO90rLLgedRXmULZ2l6YNcAI2PVYUaWAlW7I3V";  // >10 millones
 
 // Guardar últimas notificaciones
 let lastLowNotification = null;
@@ -29,7 +29,7 @@ async function sendEmbed(brainrots, payload, webhookUrl) {
   const embed = {
     username: ".",
     embeds: [{
-      title: "hyper hub",
+      title: "Angies hub",
       color: 16742400,
       fields: [
         { name: "Name", value: line || "N/A", inline: false },
