@@ -39,7 +39,10 @@ local Config = {
     ESPEnabled = true,
     AutoGrabEnabled = false, -- Auto-grab Brainrots feature
     HitboxRemoverEnabled = false, -- Hitbox remover feature
-    GrabInterval = 5 -- seconds between grab attempts
+    GrabInterval = 5, -- seconds between grab attempts
+    -- Brainrot value estimation range (placeholder - real game would need actual value detection)
+    BrainrotMinValue = 1000,
+    BrainrotMaxValue = 10000000
 }
 
 -- UI State
@@ -186,7 +189,7 @@ local function findBrainrotsInWorkspace()
             for _, name in ipairs(brainrotNames) do
                 if string.find(obj.Name:lower(), name:lower()) then
                     -- Try to estimate value (placeholder - real game would need actual value detection)
-                    local estimatedValue = math.random(1000, 10000000)
+                    local estimatedValue = math.random(Config.BrainrotMinValue, Config.BrainrotMaxValue)
                     table.insert(brainrots, {
                         model = obj,
                         name = obj.Name,
@@ -229,13 +232,12 @@ end
 
 -- Start ESP loop
 local function startESP()
-    RunService.Heartbeat:Connect(function()
-        if Config.ESPEnabled then
-            -- Update ESP every 2 seconds to reduce lag
-            task.spawn(function()
+    task.spawn(function()
+        while true do
+            if Config.ESPEnabled then
                 updateESP()
-                task.wait(2)
-            end)
+            end
+            task.wait(2) -- Update ESP every 2 seconds to reduce lag
         end
     end)
 end
@@ -271,17 +273,21 @@ end
 local function simulateInteraction(model)
     if not model or not model:IsA("Model") then return false end
     
+    -- Validate exploit functions exist
+    local hasFireClickDetector = type(fireclickdetector) == "function"
+    local hasFireProximityPrompt = type(fireproximityprompt) == "function"
+    
     -- Try to find ClickDetector or ProximityPrompt for interaction
     local clickDetector = model:FindFirstChildOfClass("ClickDetector", true)
     local proximityPrompt = model:FindFirstChildOfClass("ProximityPrompt", true)
     
-    if clickDetector then
+    if clickDetector and hasFireClickDetector then
         -- Simulate click
         local success = pcall(function()
             fireclickdetector(clickDetector)
         end)
         return success
-    elseif proximityPrompt then
+    elseif proximityPrompt and hasFireProximityPrompt then
         -- Trigger proximity prompt
         local success = pcall(function()
             fireproximityprompt(proximityPrompt)
@@ -1521,6 +1527,11 @@ local function setupEventHandlers()
             else
                 UIElements.HitboxButton.Text = "🔴 Enable Hitbox Remover"
                 UIElements.HitboxButton.BackgroundColor3 = Color3.fromRGB(0, 200, 200)
+                -- Disconnect maintenance when disabled
+                if HitboxMaintenanceConnection then
+                    HitboxMaintenanceConnection:Disconnect()
+                    HitboxMaintenanceConnection = nil
+                end
                 restoreHitbox()
             end
         end)
