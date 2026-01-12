@@ -117,13 +117,11 @@ async function sendEmbed(brainrots, payload, webhookUrl) {
   const embed = {
     username: ".",
     embeds: [{
-      title: "Angies hub",
+      title: "Blossom Finder",
       color: 16742400,
       fields: [
         { name: "Name", value: line || "N/A", inline: false },
-        { name: "Job ID", value: jobId, inline: false },
         { name: "Join Link", value: `[Click para unirse](${joinLink})`, inline: false },
-        { name: "Join Script (PC)", value: "```lua\n" + joinScript + "\n```", inline: false }
       ]
     }]
   };
