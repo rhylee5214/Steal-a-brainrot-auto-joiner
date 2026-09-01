@@ -2,6 +2,9 @@ import express from "express";
 import fetch from "node-fetch";
 
 const app = express();
+app.get("/health", (req, res) => {
+  res.json({ ok: true, status: "healthy" });
+});
 app.use(express.json());
 
 const WEBHOOK_LOW = "https://discord.com/api/webhooks/1458754029818744833/aM98FXJ9Yksoo1FNamrLJfOhXT2Eefcfw2tvA36m-OM1G3SmbQl4Urid185Tu2S-xzSV";   
