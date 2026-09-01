@@ -27,7 +27,7 @@ async function sendEmbed(brainrots, payload, webhookUrl) {
       color: 16742400,
       fields: [
         { name: "Name", value: line || "N/A", inline: false },
-        { name: "Join Link", value: `[Click para unirse](${joinLink})`, inline: false }
+        { name: "Join Link", value: joinLink, inline: false }
       ]
     }]
   };
