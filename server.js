@@ -7,9 +7,9 @@ app.get("/health", (req, res) => {
 });
 app.use(express.json());
 
-const WEBHOOK_LOW = "https://discord.com/api/webhooks/1458754029818744833/aM98FXJ9Yksoo1FNamrLJfOhXT2Eefcfw2tvA36m-OM1G3SmbQl4Urid185Tu2S-xzSV";   
-const WEBHOOK_HIGH = "https://discord.com/api/webhooks/1458754235884765267/HwFdHLzFSNGjnrSCIOD3XkE66BtV3NjO90rLLgedRXmULZ2l6YNcAI2PVYUaWAlW7I3V";  
-
+const WEBHOOK_LOW = "https://discord.com/api/webhooks/1544495633363370054/KYhnDQlK-5wKQPml4cclTd6QK5Wz6w0le2Zx05JvBpGThVCPzj4LVuaVaFQNUScjCCx5";
+const WEBHOOK_HIGH = "https://discord.com/api/webhooks/1544495633363370054/KYhnDQlK-5wKQPml4cclTd6QK5Wz6w0le2Zx05JvBpGThVCPzj4LVuaVaFQNUScjCCx5";
+  
 let lastLowNotification = null;
 let lastHighNotification = null;
 
