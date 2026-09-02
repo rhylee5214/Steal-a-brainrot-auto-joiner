@@ -34,28 +34,29 @@ local UI_INCOME_NOT_AVAILABLE_COLOR = Color3.fromRGB(150, 150, 150)
 local Config = {
     MinimumIncome = 100000000, -- 100M/s default
     Enabled = false,
-    ScanInterval = 30, -- seconds between server scans
-    PlaceId = 109983668079237, -- Official Sammy's Steal a Brainrot (Place ID for teleporting)
-    UseServerPlaceId = true, -- Use placeId from server data when teleporting
-    UniverseId = nil, -- Will be fetched automatically from Place ID
-    UniverseIdErrorShown = false, -- Track if error notification was shown
+    ScanInterval = 30,
+    PlaceId = 109983668079237,
+    UseServerPlaceId = false,
+    UniverseId = 0,
+    UniverseIdErrorShown = false,
     MaxServersToScan = 50,
     UIExpanded = false,
     ESPEnabled = true,
-    AutoGrabEnabled = false, -- Auto-grab Brainrots feature
-    HitboxRemoverEnabled = false, -- Hitbox remover feature (DEPRECATED - use AntiHit instead)
-    GrabInterval = 5, -- seconds between grab attempts
-    TeleportWaitTime = 0.5, -- seconds to wait after teleportation
-    HitboxMaintenanceInterval = 0.5, -- seconds between hitbox maintenance checks
-    -- Brainrot value estimation range (placeholder - real game would need actual value detection)
+    AutoGrabEnabled = false,
+    HitboxRemoverEnabled = false,
+    GrabInterval = 5,
+    TeleportWaitTime = 0.5,
+    HitboxMaintenanceInterval = 0.5,
     BrainrotMinValue = 1000,
     BrainrotMaxValue = 10000000,
+
     -- Notifier configuration
     Notifier = {
-        Url = "https://steal-brainrot-notifi.onrender.com/", -- Set to your notifier URL, e.g., "https://steal-brainrot-notifi.onrender.com/"
-        Secret = "" -- Optional: set if using SECRET_TOKEN authentication
+        Url = "https://steal-brainrot-notifi.onrender.com/data",
+        Secret = ""
     },
-    -- Safe Anti-Hit (Auto-Dodge) configuration
+}
+-- Safe Anti-Hit (Auto-Dodge) configuration
     AntiHit = {
         Enabled = false,
         Radius = 12, -- Detection radius for nearby threats
