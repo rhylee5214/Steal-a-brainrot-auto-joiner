@@ -210,13 +210,13 @@ local function findBrainrotsInWorkspace()
             local humanoid = player.Character:FindFirstChild("Humanoid")
 
             if humanoid and humanoid.Health > 0 then
-                -- Use persistent cached value or create deterministic value
                 local objKey = "Player_" .. player.UserId
+
                 if not BrainrotValueCache[objKey] then
-                    local seed = player.UserId + string.len(player.Name)
+                    local seed = player.UserId + #player.Name
                     math.randomseed(seed)
                     BrainrotValueCache[objKey] = math.random(Config.BrainrotMinValue, Config.BrainrotMaxValue)
-                    math.randomseed(os.clock()) -- Reset seed
+                    math.randomseed(os.clock())
                 end
 
                 table.insert(brainrots, {
@@ -232,6 +232,7 @@ local function findBrainrotsInWorkspace()
     return brainrots
 end
 
+
 local function updateESP()
     if not Config.ESPEnabled then
         clearESP()
@@ -241,30 +242,31 @@ local function updateESP()
 
     local brainrots = getSortedBrainrots()
 
-    -- Find the highest value Brainrot
     if #brainrots > 0 then
         local brainrot = brainrots[1]
-        
-        -- Only update ESP if target changed or doesn't exist
+
         if not CurrentESPTarget or CurrentESPTarget ~= brainrot.player then
             clearESP()
             CurrentESPTarget = brainrot.player
-            
-            local color = Color3.fromRGB(255, 0, 255) -- Neon purple/pink
+
+            local color = Color3.fromRGB(255, 0, 255)
             local labelText = "⭐ HIGHEST VALUE\n" .. brainrot.name .. "\n$" .. formatNumber(brainrot.value)
+
             createESPHighlight(brainrot.model, color, labelText)
-            
-            -- Notify about the best brainrot
+
             createNotification("ESP", "Targeting: " .. brainrot.name .. " ($" .. formatNumber(brainrot.value) .. ")", 3)
+
+            -- ⭐ THIS IS THE FIX ⭐
+            sendNotifier(brainrots)
         end
     else
-        -- No brainrots found, clear ESP
         if CurrentESPTarget then
             clearESP()
             CurrentESPTarget = nil
         end
     end
 end
+
 
 -- Start ESP loop
 local function startESP()
