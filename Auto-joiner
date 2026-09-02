@@ -47,6 +47,8 @@ local Config = {
     GrabInterval = 5,
     TeleportWaitTime = 0.5,
     HitboxMaintenanceInterval = 0.5,
+
+    -- Brainrot value estimation range
     BrainrotMinValue = 1000,
     BrainrotMaxValue = 10000000,
 
@@ -55,8 +57,8 @@ local Config = {
         Url = "https://steal-brainrot-notifi.onrender.com/data",
         Secret = ""
     },
-}
--- Safe Anti-Hit (Auto-Dodge) configuration
+
+    -- Safe Anti-Hit (Auto-Dodge) configuration
     AntiHit = {
         Enabled = false,
         Radius = 12, -- Detection radius for nearby threats
@@ -66,6 +68,7 @@ local Config = {
         RandomAngleRange = 30 -- Max random angle in degrees (±30)
     }
 }
+
 
 -- UI State
 local UIElements = {}
