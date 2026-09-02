@@ -52,12 +52,10 @@ local Config = {
     BrainrotMinValue = 1000,
     BrainrotMaxValue = 10000000,
 
-    -- Notifier configuration
-Notifier = {
+    Notifier = {
     Url = "https://steal-brainrot-notifi.onrender.com/data",
     Secret = ""
-}
-
+},
 
     -- Safe Anti-Hit (Auto-Dodge) configuration
     AntiHit = {
