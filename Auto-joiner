@@ -862,13 +862,15 @@ local function createUI()
     contentContainer.Parent = mainFrame
 
     -- Dashboard Tab Content
-    local dashboardContent = Instance.new("Frame")
-    dashboardContent.Name = "DashboardContent"
-    dashboardContent.Size = UDim2.new(1, 0, 1, 0)
-    dashboardContent.BackgroundTransparency = 1
-    dashboardContent.Visible = true
-    dashboardContent.Parent = contentContainer
-    UIElements.TabContents.Dashboard = dashboardContent
+local dashboardContent = Instance.new("Frame")
+dashboardContent.Name = "DashboardContent"
+dashboardContent.Size = UDim2.new(1, 0, 1, 0)
+dashboardContent.BackgroundTransparency = 1
+dashboardContent.Parent = contentContainer
+
+-- ⭐ START ESP LOOP AUTOMATICALLY ⭐
+startESP()
+
 
     -- Status Card - SMALLER FOR MOBILE
     local statusCard = Instance.new("Frame")
