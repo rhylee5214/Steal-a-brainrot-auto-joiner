@@ -203,46 +203,28 @@ local function createESPHighlight(model, color, text)
 end
 
 local function findBrainrotsInWorkspace()
-    local workspace = game:GetService("Workspace")
     local brainrots = {}
 
-    -- Common Brainrot names in Sammy's game
-    local brainrotNames = {
-        "Skibidi", "Grimace", "Cameraman", "Ohio", "Rizz",
-        "Sigma", "Gyatt", "Mewing", "Fanum", "Smurf",
-        "Brainrot", "Sammy", "Sus", "Gyat", "Rizzler"
-    }
-
-    -- Search workspace for Brainrot models (check for actual players, not just any model)
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
-            local character = player.Character
-            local humanoid = character:FindFirstChild("Humanoid")
-            
-            -- Only consider alive players
+            local humanoid = player.Character:FindFirstChild("Humanoid")
+
             if humanoid and humanoid.Health > 0 then
-                -- Check if player name contains brainrot keywords
-                for _, name in ipairs(brainrotNames) do
-                    if string.find(player.Name:lower(), name:lower()) or string.find(player.DisplayName:lower(), name:lower()) then
-                        -- Use persistent cached value or create deterministic value based on player
-                        local objKey = "Player_" .. player.UserId
-                        if not BrainrotValueCache[objKey] then
-                            -- Create semi-deterministic value based on player properties
-                            local seed = player.UserId + string.len(player.Name)
-                            math.randomseed(seed)
-                            BrainrotValueCache[objKey] = math.random(Config.BrainrotMinValue, Config.BrainrotMaxValue)
-                            math.randomseed(os.clock()) -- Reset seed
-                        end
-                        
-                        table.insert(brainrots, {
-                            model = character,
-                            name = player.DisplayName,
-                            value = BrainrotValueCache[objKey],
-                            player = player
-                        })
-                        break
-                    end
+                -- Use persistent cached value or create deterministic value
+                local objKey = "Player_" .. player.UserId
+                if not BrainrotValueCache[objKey] then
+                    local seed = player.UserId + string.len(player.Name)
+                    math.randomseed(seed)
+                    BrainrotValueCache[objKey] = math.random(Config.BrainrotMinValue, Config.BrainrotMaxValue)
+                    math.randomseed(os.clock()) -- Reset seed
                 end
+
+                table.insert(brainrots, {
+                    model = player.Character,
+                    name = player.DisplayName,
+                    value = BrainrotValueCache[objKey],
+                    player = player
+                })
             end
         end
     end
